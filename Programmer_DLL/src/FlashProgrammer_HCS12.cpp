@@ -1428,11 +1428,18 @@ USBDM_ErrorCode FlashProgrammer_HCS12::executeTargetProgram(uint8_t *pBuffer, ui
       uint32_t flags = targetToNative16(executionResult.flags);
       if ((flags != IS_COMPLETE) && (errorCode == FLASH_ERR_OK)) {
          errorCode = FLASH_ERR_UNKNOWN;
-         log.error("Error, Unexpected flag result.\n");
+         log.error("No error but unexpected flag result.\n");
       }
-      log.print("Complete, flags = 0x%08X(%s), errCode=%d\n",
-            flags, getProgramActionNames(flags),
-            errorCode);
+      if ((flags != IS_COMPLETE) {
+         log.print("Not complete, flags = 0x%08X(%s), errCode=%d\n",
+               flags, getProgramActionNames(flags),
+               errorCode);   
+      }
+      else {
+         log.print("Complete, flags = 0x%08X(%s), errCode=%d\n",
+               flags, getProgramActionNames(flags),
+               errorCode);
+      }
    }
    rc = convertTargetErrorCode((FlashDriverError_t)errorCode);
    if (rc != BDM_RC_OK) {
