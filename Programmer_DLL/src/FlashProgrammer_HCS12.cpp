@@ -1430,7 +1430,7 @@ USBDM_ErrorCode FlashProgrammer_HCS12::executeTargetProgram(uint8_t *pBuffer, ui
          errorCode = FLASH_ERR_UNKNOWN;
          log.error("No error but unexpected flag result.\n");
       }
-      if ((flags != IS_COMPLETE) {
+      if (flags != IS_COMPLETE) {
          log.print("Not complete, flags = 0x%08X(%s), errCode=%d\n",
                flags, getProgramActionNames(flags),
                errorCode);   
