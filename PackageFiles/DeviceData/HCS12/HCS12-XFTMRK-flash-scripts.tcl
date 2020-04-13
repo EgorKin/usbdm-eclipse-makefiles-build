@@ -56,6 +56,8 @@ proc loadSymbols {} {
    set ::NVM_xPROT_VALUE          0xFF
    set ::NVM_FCCOBHI              0x010A
    set ::NVM_FCCOBLO              0x010B
+   set ::NVM_ETAGHI               0x010C
+   set ::NVM_ETAGLO               0x010D
    set ::NVM_FECCRHI              0x010E
    set ::NVM_FECCRLO              0x010F
    set ::NVM_FOPT                 0x0110
@@ -224,9 +226,255 @@ proc executeFlashCommand { cmd {address "none"} {data0 "none"} {data1 "none"} {d
 }
 
 ;######################################################################################
-;#  Target is erased & unsecured
+;#	 Format already erased D-Flah & Buffer RAM User/EEE Partitions
+;#  dfpart - D-Flash user partition size (in sectors, 256 bytes each)
+;#  erpart - EEPROM Emulation partition size (in sectors, 256 bytes each)
+;#
+proc executePartitionDFlash { dfpart erpart } {
+
+   puts "executePartitionDFlash {}"
+   
+   wb $::NVM_FSTAT     $::NVM_FSTAT_CLEAR           ;# clear any error flags
+   wb $::NVM_FCCOBIX   0                            ;# index = 0
+   wb $::NVM_FCCOBHI   0x20                         ;# load command "Partition D-Flash"
+   wb $::NVM_FCCOBIX   1                 	   	    ;# index = 1
+   ww $::NVM_FCCOBHI   [expr $dfpart]      	   	 ;# load DFPART value
+   wb $::NVM_FCCOBIX   2                   	     	 ;# index = 2
+   ww $::NVM_FCCOBHI   [expr $erpart]          	    ;# load ERPART value
+   wb $::NVM_FSTAT $::NVM_FSTAT_CCIF  ;# Clear CCIF to execute the command 
+
+   ;# Wait for command completion
+   set flashBusy 1
+   set retry 0
+   while { $flashBusy } {
+      after 20
+      set status [rb $::NVM_FSTAT]
+      set flashBusy  [expr ($status & $::NVM_FSTAT_CCIF) == 0x00]
+      set flashError [expr ($status & ($::NVM_FSTAT_FPVIOL|$::NVM_FSTAT_ACCERR))]
+      if [expr $flashError != 0] {
+         break;
+      }
+      if [expr $retry == 20] {
+         break;
+      }
+      incr retry
+   }
+   if [ expr ($flashError || ($retry>=20)) ] {
+      puts [ format "PartitionDFlash command error NVM_FSTAT=0x%02X, retry=%d" $status $retry ]
+      error $::PROGRAMMING_RC_ERROR_FAILED_FLASH_COMMAND
+   }
+   return
+}
+
+;######################################################################################
+;#	 Erase and format D-Flah & Buffer RAM User/EEE Partitions
+;#  dfpart - D-Flash user partition size (in sectors, 256 bytes each)
+;#  erpart - EEPROM Emulation partition size (in sectors, 256 bytes each)
+;#
+proc executeFullPartitionDFlash { dfpart erpart } {
+
+   puts "executeFullPartitionDFlash {}"
+   
+   wb $::NVM_FSTAT     $::NVM_FSTAT_CLEAR           ;# clear any error flags
+   wb $::NVM_FCCOBIX   0                            ;# index = 0
+   wb $::NVM_FCCOBHI   0xF                          ;# load command "Full Partition D-Flash"
+   wb $::NVM_FCCOBIX   1                            ;# index = 1
+   ww $::NVM_FCCOBHI   [expr $dfpart]               ;# load DFPART value
+   wb $::NVM_FCCOBIX   2                            ;# index = 2
+   ww $::NVM_FCCOBHI   [expr $erpart]               ;# load ERPART value
+   wb $::NVM_FSTAT $::NVM_FSTAT_CCIF  ;# Clear CCIF to execute the command 
+
+   ;# Wait for command completion
+   set flashBusy 1
+   set retry 0
+   while { $flashBusy } {
+      after 20
+      set status [rb $::NVM_FSTAT]
+      set flashBusy  [expr ($status & $::NVM_FSTAT_CCIF) == 0x00]
+      set flashError [expr ($status & ($::NVM_FSTAT_FPVIOL|$::NVM_FSTAT_ACCERR))]
+      if [expr $flashError != 0] {
+         break;
+      }
+      if [expr $retry == 20] {
+         break;
+      }
+      incr retry
+   }
+   if [ expr ($flashError || ($retry>=20)) ] {
+      puts [ format "FullPartitionDFlash command error NVM_FSTAT=0x%02X, retry=%d" $status $retry ]
+      error $::PROGRAMMING_RC_ERROR_FAILED_FLASH_COMMAND
+   }
+   return
+}
+
+;######################################################################################
+;#	 Enable EEPROM Emulation
+;#
+proc executeEnableEEE { } {
+
+   puts "executeEnableEEE {}"
+   
+   wb $::NVM_FSTAT     $::NVM_FSTAT_CLEAR           ;# clear any error flags
+   wb $::NVM_FCCOBIX   0                            ;# index = 0
+   wb $::NVM_FCCOBHI   0x13                         ;# load command "Enable EEPROM Emulation"
+   wb $::NVM_FSTAT $::NVM_FSTAT_CCIF  ;# Clear CCIF to execute the command 
+
+   ;# Wait for command completion
+   set flashBusy 1
+   set retry 0
+   while { $flashBusy } {
+      after 20
+      set status [rb $::NVM_FSTAT]
+      set flashBusy  [expr ($status & $::NVM_FSTAT_CCIF) == 0x00]
+      set flashError [expr ($status & ($::NVM_FSTAT_FPVIOL|$::NVM_FSTAT_ACCERR))]
+      if [expr $flashError != 0] {
+         break;
+      }
+      if [expr $retry == 20] {
+         break;
+      }
+      incr retry
+   }
+   if [ expr ($flashError || ($retry>=20)) ] {
+      puts [ format "EnableEEE command error NVM_FSTAT=0x%02X, retry=%d" $status $retry ]
+      error $::PROGRAMMING_RC_ERROR_FAILED_FLASH_COMMAND
+   }
+   return
+}
+
+;######################################################################################
+;#	 Disable EEPROM Emulation
+;#
+proc executeDisableEEE { } {
+
+   puts "executeDisableEEE {}"
+   
+   wb $::NVM_FSTAT     $::NVM_FSTAT_CLEAR           ;# clear any error flags
+   
+   set MGBusy 1
+   set etag 1
+   set retry 0
+   while { [expr ($MGBusy || $etag > 0)] } {
+      after 20
+      set status [rb $::NVM_FSTAT]
+      set etag [rw $::NVM_ETAGHI]
+      set MGBusy  [expr ($status & $::NVM_FSTAT_MGBUSY) != 0x00]
+      if [expr $retry == 20] {
+         break;
+      }
+      incr retry
+   }
+   if [ expr ($retry>=20) ] {
+      puts [ format "Previous command still active, error NVM_FSTAT=0x%02X, retry=%d, ETAG=%d" $status $retry $etag]
+      error $::PROGRAMMING_RC_ERROR_FAILED_FLASH_COMMAND
+     return
+   }
+   
+   wb $::NVM_FCCOBIX   0                            ;# index = 0
+   wb $::NVM_FCCOBHI   0x14                         ;# load command "Disable EEPROM Emulation"
+
+   wb $::NVM_FSTAT $::NVM_FSTAT_CCIF  ;# Clear CCIF to execute the command 
+
+   ;# Wait for command completion
+   set flashBusy 1
+   set retry 0
+   while { $flashBusy } {
+      after 20
+      set status [rb $::NVM_FSTAT]
+      set flashBusy  [expr ($status & $::NVM_FSTAT_CCIF) == 0x00]
+      set flashError [expr ($status & ($::NVM_FSTAT_FPVIOL|$::NVM_FSTAT_ACCERR))]
+      if [expr $flashError != 0] {
+         break;
+      }
+      if [expr $retry == 20] {
+         break;
+      }
+      incr retry
+   }
+   if [ expr ($flashError || ($retry>=20)) ] {
+      set etag [rw $::NVM_ETAGHI]
+      puts [ format "DisableEEE command error NVM_FSTAT=0x%02X, retry=%d, etag=%d" $status $retry $etag]
+      error $::PROGRAMMING_RC_ERROR_FAILED_FLASH_COMMAND
+   }
+   return
+}
+
+;######################################################################################
+;#	 Query EEPROM Emulation information
+;#
+proc executeEEEQuery { } {
+
+   puts "executeEEEQuery {}"
+   
+   wb $::NVM_FSTAT     $::NVM_FSTAT_CLEAR           ;# clear any error flags
+   wb $::NVM_FCCOBIX   0                            ;# index = 0
+   wb $::NVM_FCCOBHI   0x15                         ;# load command "EEPROM Emulation Query"
+   wb $::NVM_FSTAT $::NVM_FSTAT_CCIF  ;# Clear CCIF to execute the command 
+
+   ;# Wait for command completion
+   set flashBusy 1
+   set retry 0
+   while { $flashBusy } {
+      after 20
+      set status [rb $::NVM_FSTAT]
+      set flashBusy  [expr ($status & $::NVM_FSTAT_CCIF) == 0x00]
+      set flashError [expr ($status & ($::NVM_FSTAT_FPVIOL|$::NVM_FSTAT_ACCERR))]
+      if [expr $flashError != 0] {
+         break;
+      }
+      if [expr $retry == 20] {
+         break;
+      }
+      incr retry
+   }
+   if [ expr ($flashError || ($retry>=20)) ] {
+      puts [ format "PartitionDFlash command error NVM_FSTAT=0x%02X, retry=%d" $status $retry ]
+      error $::PROGRAMMING_RC_ERROR_FAILED_FLASH_COMMAND
+   }
+   
+   wb $::NVM_FCCOBIX   1                        ;# index = 1
+   set aDFPART [rw $::NVM_FCCOBHI]              ;# get DFPART value
+   wb $::NVM_FCCOBIX   2                        ;# index = 2
+   set aERPART [rw $::NVM_FCCOBHI]              ;# get ERPART value
+   wb $::NVM_FCCOBIX   3                        ;# index = 3
+   set aECOUNT [rw $::NVM_FCCOBHI]              ;# get ECOUNT value
+   wb $::NVM_FCCOBIX   4                        ;# index = 4
+   set aDEAD  [rb $::NVM_FCCOBHI]              ;# get DEAD/READY Sector Count value
+   set aREADY [rb $::NVM_FCCOBLO]              ;# get DEAD/READY Sector Count value
+
+   puts [ format "DFPART = 0x%02X" $aDFPART ]
+   puts [ format "ERPART = 0x%02X" $aERPART ]
+   puts [ format "ECOUNT = 0x%02X" $aECOUNT ]
+   puts [ format "DEAD Sectors = 0x%02X" $aDEAD ]
+   puts [ format "READY Sectors = 0x%02X" $aREADY ]
+   
+   return
+}
+
+;######################################################################################
+;#  Target is erased, unsecured, create D-Flash EEE partition & Enable EEPROM Emulation (for write to D-Flash EEE via Buffer RAM EEE)
 ;#
 proc massEraseTarget { } {
+
+   ;# Mass erase flash
+   initFlash [expr [speed]/1000]  ;# Flash speed calculated from BDM connection speed
+   
+   executeFlashCommand $::NVM_FCMD_UNSECURE
+   executeFlashCommand $::NVM_FCMD_ERASE_ALL_BLKS
+   disableWatchdog
+   
+   executePartitionDFlash 0x0000 0x0010
+   executeEEEQuery
+   executeEnableEEE
+
+
+return
+}
+
+;######################################################################################
+;#  Target is erased & unsecured
+;#
+proc massEraseTarget_old { } {
 
    puts "massEraseTarget{}"
    
